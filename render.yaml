@@ -2,8 +2,9 @@ services:
   - type: web
     name: dealflow-backend
     env: python
-    buildCommand: "./backend/python_installer.exe /quiet InstallAllUsers=1 PrependPath=1 & pip install -r backend/requirements.txt"
-    startCommand: "cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT"
+    rootDir: backend
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
     envVars:
       - key: DATABASE_URL
         value: sqlite:////data/dealflow.db
