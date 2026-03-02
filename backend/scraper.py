@@ -1,0 +1,236 @@
+import requests
+from bs4 import BeautifulSoup
+from sqlalchemy.orm import Session
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from webdriver_manager.chrome import ChromeDriverManager
+import schemas
+import crud
+import models
+from database import SessionLocal
+
+def get_headers():
+    return {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Referer": "https://www.fmkorea.com/",
+        "Sec-Ch-Ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"',
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1"
+    }
+
+import cloudscraper
+
+def scrape_fmkorea(db: Session, limit=20):
+    url = "https://www.fmkorea.com/hotdeal"
+    try:
+        scraper_client = cloudscraper.create_scraper()
+        response = scraper_client.get(url)
+        soup = BeautifulSoup(response.text, "html.parser")
+        
+        items = soup.select("li.li_best2_pop0, li.li_best2_hotdeal0")
+        for item in items[:limit]:
+            title_tag = item.select_one("span.ellipsis-target")
+            raw_title = title_tag.get_text(strip=True) if title_tag else "No title"
+            
+            link_tag = item.select_one("h3.title > a")
+            link = "https://www.fmkorea.com" + link_tag["href"] if link_tag else url
+            
+            comment_tag = item.select_one("span.comment_count")
+            comments = 0
+            if comment_tag:
+                try:
+                    comments = int(comment_tag.get_text(strip=True).strip("[]"))
+                except:
+                    pass
+            
+            hotdeal_info = item.select_one("div.hotdeal_info")
+            price = 0.0
+            mall = "Unknown"
+            if hotdeal_info:
+                spans = hotdeal_info.select("span > a.strong")
+                if len(spans) >= 2:
+                    mall = spans[0].get_text(strip=True)
+                    try:
+                        price_str = spans[1].get_text(strip=True).replace("원", "").replace(",", "")
+                        price = float(price_str)
+                    except:
+                        pass
+            
+            # Check if deal already exists
+            existing_deal = crud.get_deal_by_url(db, link)
+            if not existing_deal:
+                deal_data = schemas.DealCreate(
+                    title=raw_title,
+                    price=price,
+                    url=link,
+                    source="fmkorea",
+                    mall=mall,
+                    likes=0,
+                    comments=comments
+                )
+                crud.create_deal(db, deal_data)
+                
+    except Exception as e:
+        print(f"Error scraping FMKorea: {e}")
+
+def scrape_algumon(db: Session, limit=20):
+    url = "https://www.algumon.com/"
+    try:
+        response = requests.get(url, headers=get_headers())
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+        
+        items = soup.select("li.post-li")
+        for item in items[:limit]:
+            title_tag = item.select_one("a.product-link")
+            if not title_tag:
+                continue
+            
+            raw_title = title_tag.get_text(strip=True)
+            link = "https://www.algumon.com" + title_tag["href"] if title_tag["href"].startswith("/") else title_tag["href"]
+            
+            price_tag = item.select_one("small.product-price")
+            price = 0.0
+            if price_tag:
+                try:
+                    price_str = price_tag.get_text(strip=True).replace("원", "").replace(",", "").strip()
+                    price = float(price_str)
+                except ValueError:
+                    pass
+            
+            shop_tag = item.select_one("span.label.shop a")
+            mall = shop_tag.get_text(strip=True) if shop_tag else "Unknown"
+            
+            # Likes
+            likes_tag = item.select_one("p.deal-meta-info i.icon-thumbs-up")
+            likes = 0
+            if likes_tag and likes_tag.parent:
+                likes_text = likes_tag.parent.get_text(strip=True)
+                try:
+                    likes = int(likes_text)
+                except:
+                    pass
+            
+            # Comments
+            comment_btn = item.select_one("button.btn-comment")
+            comments = 0
+            if comment_btn and "data-comment-count" in comment_btn.attrs:
+                try:
+                    comments = int(comment_btn["data-comment-count"])
+                except:
+                    pass
+            
+            # Check if deal already exists
+            existing_deal = crud.get_deal_by_url(db, link)
+            if not existing_deal:
+                deal_data = schemas.DealCreate(
+                    title=raw_title,
+                    price=price,
+                    url=link,
+                    source="algumon",
+                    mall=mall,
+                    likes=likes,
+                    comments=comments
+                )
+                crud.create_deal(db, deal_data)
+                
+    except Exception as e:
+        print(f"Error scraping Algumon: {e}")
+
+def scrape_momibebe(db: Session, limit=20):
+    # Momibebe is a Naver Cafe (cafe.naver.com/imsanbu), which heavily uses iframes and requires Selenium.
+    # Note: Naver cafe crawling often requires login or complex bypassing. 
+    # For MVP, we'll try to get public board titles if exposed, or add a placeholder.
+    url = "https://cafe.naver.com/ArticleList.nhn?search.clubid=10094499&search.menuid=1460&search.boardtype=L" # Hot Deal Board example
+    try:
+        chrome_options = Options()
+        chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+        
+        driver.get(url)
+        
+        # Switch to the main iframe where article list is loaded
+        try:
+            driver.switch_to.frame("cafe_main")
+            soup = BeautifulSoup(driver.page_source, "html.parser")
+            
+            items = soup.select("div.article-board.m-tcol-c > table > tbody > tr")
+            for item in items[:limit]:
+                title_tag = item.select_one("a.article")
+                if not title_tag:
+                    continue
+                
+                raw_title = title_tag.get_text(strip=True)
+                link = "https://cafe.naver.com/imsanbu" + title_tag["href"]
+                
+                # Naver cafe titles usually have [Mall] Product Price format.
+                # We do basic extraction or save raw format for MVP.
+                mall = "Unknown"
+                price = 0.0
+                
+                # MVP placeholder for MomiBebe parsing (highly variable format)
+                existing_deal = crud.get_deal_by_url(db, link)
+                if not existing_deal:
+                    deal_data = schemas.DealCreate(
+                        title=raw_title,
+                        price=price,
+                        url=link,
+                        source="momibebe",
+                        mall=mall
+                    )
+                    crud.create_deal(db, deal_data)
+        except Exception as iframe_error:
+            print(f"Error accessing cafe iframe: {iframe_error}")
+            
+        driver.quit()
+    except Exception as e:
+        print(f"Error scraping Momibebe: {e}")
+
+def check_alerts(db: Session, new_deals):
+    if not new_deals:
+        return
+    active_alerts = crud.get_active_alerts(db)
+    if not active_alerts:
+        return
+        
+    for deal in new_deals:
+        for alert in active_alerts:
+            if alert.keyword.lower() in deal.title.lower():
+                print(f"\n[ALERT MATCH] Keyword '{alert.keyword}' found in deal: '{deal.title}'")
+                print(f" -> Sending mock email to {alert.email} with link: {deal.url}\n")
+
+
+def run_all_scrapers():
+    db = SessionLocal()
+    try:
+        print("Starting scrapers...")
+        
+        # Keep track of existing deals counts to find new ones
+        initial_deals = db.query(models.Deal).count()
+        
+        scrape_fmkorea(db)
+        scrape_algumon(db)
+        scrape_momibebe(db)
+        
+        final_deals = db.query(models.Deal).order_by(models.Deal.id.desc()).all()
+        new_deal_count = len(final_deals) - initial_deals
+        if new_deal_count > 0:
+            new_deals = final_deals[:new_deal_count]
+            check_alerts(db, new_deals)
+            
+        print("Scrapers completed.")
+    finally:
+        db.close()
