@@ -141,6 +141,101 @@ def scrape_algumon(db: Session, limit=20):
     except Exception as e:
         print(f"Error scraping Algumon: {e}")
 
+def search_fmkorea(db: Session, keyword: str, limit=20):
+    url = f"https://www.fmkorea.com/search.php?mid=hotdeal&search_keyword={keyword}&search_target=title_content"
+    try:
+        scraper_client = cloudscraper.create_scraper()
+        response = scraper_client.get(url)
+        soup = BeautifulSoup(response.text, "html.parser")
+        
+        items = soup.select("div.webzine > ul > li")
+        if not items: # Fallback to normal hotdeal list items if search view is different
+            items = soup.select("li.li_best2_pop0, li.li_best2_hotdeal0")
+            
+        for item in items[:limit]:
+            title_tag = item.select_one("a.title") or item.select_one("h3.title > a")
+            if not title_tag:
+                continue
+            raw_title = title_tag.get_text(strip=True)
+            
+            link = "https://www.fmkorea.com" + title_tag["href"] if title_tag["href"].startswith("/") else "https://www.fmkorea.com/" + title_tag["href"]
+            
+            # Price/mall info is harder to extract from FMKorea generic search view
+            # Using defaults for historical records unless visible
+            price = 0.0
+            mall = "Unknown"
+            
+            hotdeal_info = item.select_one("div.hotdeal_info") or item.select_one("span.list_sys")
+            if hotdeal_info:
+                spans = hotdeal_info.select("span > a.strong") or hotdeal_info.select("span.title")
+                if len(spans) >= 2:
+                    mall = spans[0].get_text(strip=True)
+                    try:
+                        price_str = spans[1].get_text(strip=True).replace("원", "").replace(",", "")
+                        price = float(price_str)
+                    except:
+                        pass
+                        
+            existing_deal = crud.get_deal_by_url(db, link)
+            if not existing_deal:
+                deal_data = schemas.DealCreate(
+                    title=raw_title,
+                    price=price,
+                    url=link,
+                    source="fmkorea",
+                    mall=mall,
+                    likes=0,
+                    comments=0
+                )
+                crud.create_deal(db, deal_data)
+                
+    except Exception as e:
+        print(f"Error searching FMKorea for '{keyword}': {e}")
+
+def search_algumon(db: Session, keyword: str, limit=20):
+    url = f"https://www.algumon.com/search?q={keyword}"
+    try:
+        response = requests.get(url, headers=get_headers())
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+        
+        items = soup.select("li.post-li")
+        for item in items[:limit]:
+            title_tag = item.select_one("a.product-link")
+            if not title_tag:
+                continue
+            
+            raw_title = title_tag.get_text(strip=True)
+            link = "https://www.algumon.com" + title_tag["href"] if title_tag["href"].startswith("/") else title_tag["href"]
+            
+            price_tag = item.select_one("small.product-price")
+            price = 0.0
+            if price_tag:
+                try:
+                    price_str = price_tag.get_text(strip=True).replace("원", "").replace(",", "").strip()
+                    price = float(price_str)
+                except ValueError:
+                    pass
+            
+            shop_tag = item.select_one("span.label.shop a")
+            mall = shop_tag.get_text(strip=True) if shop_tag else "Unknown"
+            
+            existing_deal = crud.get_deal_by_url(db, link)
+            if not existing_deal:
+                deal_data = schemas.DealCreate(
+                    title=raw_title,
+                    price=price,
+                    url=link,
+                    source="algumon",
+                    mall=mall,
+                    likes=0,
+                    comments=0
+                )
+                crud.create_deal(db, deal_data)
+                
+    except Exception as e:
+        print(f"Error searching Algumon for '{keyword}': {e}")
+
 def scrape_momibebe(db: Session, limit=20):
     # Momibebe is a Naver Cafe (cafe.naver.com/imsanbu), which heavily uses iframes and requires Selenium.
     # Selenium requires a full Chrome installation, which is not available on Render's free tier by default.

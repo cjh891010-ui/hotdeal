@@ -46,6 +46,15 @@ def create_alert(alert: schemas.DealAlertCreate, db: Session = Depends(get_db)):
 
 @app.get("/deals/", response_model=list[schemas.Deal])
 def read_deals(skip: int = 0, limit: int = 100, q: Optional[str] = None, sort: str = "latest", db: Session = Depends(get_db)):
+    if q:
+        # User searched for a keyword. Dynamically scrape historical data first.
+        try:
+            scraper.search_fmkorea(db, q, limit=30)
+            scraper.search_algumon(db, q, limit=30)
+            # MomiBebe search is disabled for MVP to prevent Selenium dependency issues on Render
+        except Exception as e:
+            print(f"Error during dynamic search scraping for '{q}': {e}")
+            
     deals = crud.get_deals(db, skip=skip, limit=limit, query=q, sort_by=sort)
     return deals
 
