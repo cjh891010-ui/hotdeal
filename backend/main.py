@@ -50,10 +50,15 @@ def read_deals(skip: int = 0, limit: int = 100, q: Optional[str] = None, sort: s
         # User searched for a keyword. Dynamically scrape historical data first.
         try:
             scraper.search_fmkorea(db, q, limit=30)
-            scraper.search_algumon(db, q, limit=30)
-            # MomiBebe search is disabled for MVP to prevent Selenium dependency issues on Render
         except Exception as e:
-            print(f"Error during dynamic search scraping for '{q}': {e}")
+            print(f"Error during search_fmkorea for '{q}': {e}")
+            
+        try:
+            scraper.search_algumon(db, q, limit=30)
+        except Exception as e:
+            print(f"Error during search_algumon for '{q}': {e}")
+            
+        # MomiBebe search is disabled for MVP to prevent Selenium dependency issues on Render
             
     deals = crud.get_deals(db, skip=skip, limit=limit, query=q, sort_by=sort)
     return deals

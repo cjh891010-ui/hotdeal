@@ -193,7 +193,7 @@ def search_fmkorea(db: Session, keyword: str, limit=20):
         print(f"Error searching FMKorea for '{keyword}': {e}")
 
 def search_algumon(db: Session, keyword: str, limit=20):
-    url = f"https://www.algumon.com/search?q={keyword}"
+    url = f"https://www.algumon.com/?q={keyword}"
     try:
         response = requests.get(url, headers=get_headers())
         response.raise_for_status()
