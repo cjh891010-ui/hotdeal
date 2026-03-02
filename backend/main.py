@@ -14,14 +14,18 @@ scheduler = BackgroundScheduler()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Start the scheduler when app starts
-    scheduler.add_job(scraper.run_all_scrapers, 'interval', minutes=10)
-    scheduler.start()
-    # Run once immediately
-    scheduler.add_job(scraper.run_all_scrapers)
+    # Temporarily disabled APScheduler on startup to prevent Render crashes
+    # scheduler.add_job(scraper.run_all_scrapers, 'interval', minutes=10)
+    # scheduler.start()
+    # Run once immediately, but catch errors to prevent startup crash
+    # try:
+    #     scheduler.add_job(scraper.run_all_scrapers)
+    # except Exception as e:
+    #     print(f"Initial scrape failed to schedule or run: {e}")
+    print("Backend started successfully without initial scraping jobs to ensure stability.")
     yield
     # Shutdown the scheduler when app stops
-    scheduler.shutdown()
+    # scheduler.shutdown()
 
 # Create tables
 models.Base.metadata.create_all(bind=engine)
