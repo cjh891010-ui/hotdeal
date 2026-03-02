@@ -14,18 +14,14 @@ scheduler = BackgroundScheduler()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Temporarily disabled APScheduler on startup to prevent Render crashes
-    # scheduler.add_job(scraper.run_all_scrapers, 'interval', minutes=10)
-    # scheduler.start()
-    # Run once immediately, but catch errors to prevent startup crash
-    # try:
-    #     scheduler.add_job(scraper.run_all_scrapers)
-    # except Exception as e:
-    #     print(f"Initial scrape failed to schedule or run: {e}")
-    print("Backend started successfully without initial scraping jobs to ensure stability.")
+    # Start background scheduler for periodic scraping (every 10 minutes)
+    scheduler.add_job(scraper.run_all_scrapers, 'interval', minutes=10)
+    scheduler.start()
+    
+    print("Backend started successfully with background scheduler enabled.")
     yield
     # Shutdown the scheduler when app stops
-    # scheduler.shutdown()
+    scheduler.shutdown()
 
 # Create tables
 models.Base.metadata.create_all(bind=engine)
@@ -59,3 +55,12 @@ def read_price_history(q: str, db: Session = Depends(get_db)):
         return []
     history = crud.get_price_history(db, keyword=q)
     return history
+
+@app.get("/api/scrape")
+def manual_scrape():
+    """Manually trigger the web scrapers to fetch new hot deals."""
+    try:
+        scraper.run_all_scrapers()
+        return {"status": "success", "message": "Manual scrape completed successfully."}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
