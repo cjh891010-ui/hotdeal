@@ -147,57 +147,10 @@ def scrape_algumon(db: Session, limit=20):
 
 def scrape_momibebe(db: Session, limit=20):
     # Momibebe is a Naver Cafe (cafe.naver.com/imsanbu), which heavily uses iframes and requires Selenium.
-    # Note: Naver cafe crawling often requires login or complex bypassing. 
-    # For MVP, we'll try to get public board titles if exposed, or add a placeholder.
-    url = "https://cafe.naver.com/ArticleList.nhn?search.clubid=10094499&search.menuid=1460&search.boardtype=L" # Hot Deal Board example
-    try:
-        chrome_options = Options()
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-        
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=chrome_options)
-        
-        driver.get(url)
-        
-        # Switch to the main iframe where article list is loaded
-        try:
-            driver.switch_to.frame("cafe_main")
-            soup = BeautifulSoup(driver.page_source, "html.parser")
-            
-            items = soup.select("div.article-board.m-tcol-c > table > tbody > tr")
-            for item in items[:limit]:
-                title_tag = item.select_one("a.article")
-                if not title_tag:
-                    continue
-                
-                raw_title = title_tag.get_text(strip=True)
-                link = "https://cafe.naver.com/imsanbu" + title_tag["href"]
-                
-                # Naver cafe titles usually have [Mall] Product Price format.
-                # We do basic extraction or save raw format for MVP.
-                mall = "Unknown"
-                price = 0.0
-                
-                # MVP placeholder for MomiBebe parsing (highly variable format)
-                existing_deal = crud.get_deal_by_url(db, link)
-                if not existing_deal:
-                    deal_data = schemas.DealCreate(
-                        title=raw_title,
-                        price=price,
-                        url=link,
-                        source="momibebe",
-                        mall=mall
-                    )
-                    crud.create_deal(db, deal_data)
-        except Exception as iframe_error:
-            print(f"Error accessing cafe iframe: {iframe_error}")
-            
-        driver.quit()
-    except Exception as e:
-        print(f"Error scraping Momibebe: {e}")
+    # Selenium requires a full Chrome installation, which is not available on Render's free tier by default.
+    # Disabling MomiBebe scraping for this environment to prevent server crashes.
+    print("MomiBebe scraper is currently disabled on this environment to avoid Selenium dependencies.")
+    pass
 
 def check_alerts(db: Session, new_deals):
     if not new_deals:
