@@ -101,7 +101,7 @@ export function PriceChart({ keyword }: { keyword: string }) {
                                     dx={-10}
                                 />
                                 <Tooltip
-                                    formatter={(value: number) => [`${value.toLocaleString()}원`, '최저가']}
+                                    formatter={(value: any) => [`${value?.toLocaleString?.() || value}원`, '최저가']}
                                     labelFormatter={(label) => `${label} 핫딜 가격`}
                                     contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                                 />
